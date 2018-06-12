@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,8 @@ var (
 	EncodingAESKey = GetConfig.GetValue("weixin", "EncodingAESKey")
 
 	TokenCache *cache.Cache
+
+	ContentReg = regexp.MustCompile("\\[.*?\\]")
 )
 
 func init() {
@@ -64,7 +67,7 @@ type Content struct {
 }
 
 type MsgPost struct {
-	ToUser  string  `json:"touser"`
+	ToParty string  `json:"toparty"`
 	MsgType string  `json:"msgtype"`
 	AgentID int     `json:"agentid"`
 	Text    Content `json:"text"`
@@ -74,6 +77,14 @@ func SendMsg(context echo.Context) error {
 	toUser := context.FormValue("tos")
 	content := context.FormValue("content")
 	//content := "[P0][OK][192.168.11.26_ofmon][][【critical】与主mysql同步延迟超过10s！ all(#3) seconds_behind_master port=3306 0>10][O1 2017-04-17 08:55:00]"
+	// 1. 日志级别：P0
+	// 2. 告警状态：OK
+	// 3. 报警主机：192.168.11.26_ofmon
+	// 4.
+	// 5. 告警内容：
+	// 6. 告警时间：
+
+	/* 原简单替换
 	content = strings.Replace(content, "][", "\n", -1)
 	if content[0] == '[' {
 		content = content[1:]
@@ -82,6 +93,7 @@ func SendMsg(context echo.Context) error {
 	if content[len(content)-1] == ']' {
 		content = content[:len(content)-1]
 	}
+	*/
 
 	if userList := strings.Split(toUser, ","); len(userList) > 1 {
 		toUser = strings.Join(userList, "|")
@@ -90,8 +102,20 @@ func SendMsg(context echo.Context) error {
 	text := Content{}
 	text.Content = content
 
+	// 重新拆分字符串
+	contentList := ContentReg.FindAllString(content, -1)
+	prefixList := []string{"日志级别：", "告警状态：", "报警主机：", "", "告警内容：", "告警时间："}
+	contentNew := ""
+	for k, v := range contentList {
+		if k >= len(prefixList) || len(v) < 2 {
+			continue
+		}
+		contentNew += prefixList[k] + v[1:len(v)-1] + "\n"
+	}
+	text.Content = contentNew
+
 	msg := MsgPost{
-		ToUser:  toUser,
+		ToParty: toUser,
 		MsgType: "text",
 		AgentID: StringToInt(agentId),
 		Text:    text,
